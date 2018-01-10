@@ -12,6 +12,7 @@ def get_loader(config):
         root=root,
         transform=transforms.Compose([
             transforms.Resize(config.image_size),
+            transforms.RandomHorizontalFlip(),
             transforms.ToTensor(),
             transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
         ])

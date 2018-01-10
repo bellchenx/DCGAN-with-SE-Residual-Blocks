@@ -23,11 +23,18 @@ parser.add_argument('--fixed_num', type=int, default=32)
 # Network
 parser.add_argument('--noise_dim', type=int, default=64)
 parser.add_argument('--channel_num', type=int, default=64)
-parser.add_argument('--block_num', type=int, default=4)
+parser.add_argument('--block_num', type=int, default=5)
+parser.add_argument('--d_rate', type=float, default=1)
+parser.add_argument('--net_g_se', type=bool, default=True)
+parser.add_argument('--net_d_se', type=bool, default=True)
+parser.add_argument('--enable_bias', type=bool, default=True)
 # Training
+parser.add_argument('--k_d_real', type=int, default=1)
+parser.add_argument('--k_d_fake', type=int, default=1)
+parser.add_argument('--k_g', type=int, default=1)
 parser.add_argument('--learning_rate', type=int, default=0.00005)
-parser.add_argument('--final_epoch', type=int, default=300)
-parser.add_argument('--log_frequency', type=int, default=5)
+parser.add_argument('--final_epoch', type=int, default=200)
+parser.add_argument('--log_frequency', type=int, default=1)
 parser.add_argument('--save_frequency', type=int, default=10)
 # Resume
 parser.add_argument('--resume', type=bool, default=False)
@@ -69,10 +76,8 @@ def train(start, epoch, config):
     last_time = time.time()
     epoch_time = time.time()
     for idx, (image, _) in enumerate(loader):
-        net_d.zero_grad()
-        net_g.zero_grad()
-
         # Discriminator
+        net_d.zero_grad()
         real = Variable(image)
         noise = Variable(torch.Tensor(config.batch_size, config.noise_dim))
         noise.data.normal_(0.0, 1.0)
@@ -80,21 +85,30 @@ def train(start, epoch, config):
             real = real.cuda()
             noise = noise.cuda()
 
-        fake = net_g(noise)
-        fake_d = net_d(fake.detach())
         real_d = net_d(real)
-
         real_label = Variable(torch.ones(real_d.size()))
-        fake_label = Variable(torch.zeros(fake_d.size()))
         if use_cuda:
             real_label = real_label.cuda()
+        cost_d_real = bce(real_d, real_label)
+
+        #if idx % config.k_d_real == 0:
+        cost_d_real.backward()
+
+        fake = net_g(noise)
+        fake_d = net_d(fake.detach())       
+        fake_label = Variable(torch.zeros(fake_d.size()))
+        if use_cuda:
             fake_label = fake_label.cuda()
-        
-        cost_d = bce(real_d, real_label) + bce(fake_d, fake_label)
-        cost_d.backward()
+        cost_d_fake = bce(fake_d, fake_label)
+
+        #if idx % config.k_d_fake == 0:
+        cost_d_fake.backward()
+
+        cost_d = cost_d_fake + cost_d_real
         opt_d.step()
 
         # Generator
+        net_g.zero_grad()
         fake_g = net_d(fake)
 
         real_label = Variable(torch.ones(fake_g.size()))
@@ -102,6 +116,8 @@ def train(start, epoch, config):
             real_label = real_label.cuda()
 
         cost_g = bce(fake_g, real_label)
+
+        #if idx % config.k_g == 0:
         cost_g.backward()
         opt_g.step()
 
